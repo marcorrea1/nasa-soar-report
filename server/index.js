@@ -24,18 +24,23 @@ let compIdToTable = {};
 async function buildCompIdMapping() {
   const client = await pool.connect();
   try {
-    // Find all tables with comp_id across all non-system schemas
+    // Use pg_catalog (more reliable than information_schema in cloud DBs)
     const tablesRes = await client.query(`
-      SELECT DISTINCT table_schema, table_name
-      FROM information_schema.columns
-      WHERE column_name = 'comp_id'
-        AND table_schema NOT IN ('information_schema', 'pg_catalog')
-        AND table_name != 'comptype'
-      ORDER BY table_name
+      SELECT n.nspname AS table_schema, c.relname AS table_name
+      FROM pg_catalog.pg_class c
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+      WHERE a.attname = 'comp_id'
+        AND c.relkind = 'r'
+        AND n.nspname NOT IN ('pg_catalog', 'pg_toast', 'information_schema')
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+        AND c.relname != 'comptype'
+      ORDER BY c.relname
     `);
 
     const schemas = [...new Set(tablesRes.rows.map(r => r.table_schema))];
-    console.log('Schemas found:', schemas);
+    console.log('Schemas found:', schemas, '| Tables found:', tablesRes.rows.length);
 
     for (const row of tablesRes.rows) {
       const { table_schema, table_name } = row;
@@ -135,14 +140,19 @@ app.get('/api/search', async (req, res) => {
   const client = await pool.connect();
   try {
     for (const entry of uniqueEntries) {
-      // Get text columns for this table
+      // Get text columns for this table using pg_catalog
       const colsRes = await client.query(`
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = $1
-          AND table_name = $2
-          AND data_type IN ('text', 'character varying')
-        ORDER BY ordinal_position
+        SELECT a.attname AS column_name
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+        WHERE n.nspname = $1
+          AND c.relname = $2
+          AND t.typname IN ('text', 'varchar')
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        ORDER BY a.attnum
       `, [entry.schema, entry.tableName]);
 
       const cols = colsRes.rows.map(r => r.column_name);
@@ -184,17 +194,22 @@ app.patch('/api/comptypes/:compId/rows/:modelId', async (req, res) => {
 
     // Validate field exists in this table (prevents SQL injection)
     const colCheck = await pool.query(
-      `SELECT column_name, data_type FROM information_schema.columns
-       WHERE table_schema = $1 AND table_name = $2 AND column_name = $3`,
+      `SELECT a.attname AS column_name, t.typname AS data_type
+       FROM pg_catalog.pg_attribute a
+       JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+       WHERE n.nspname = $1 AND c.relname = $2 AND a.attname = $3
+         AND a.attnum > 0 AND NOT a.attisdropped`,
       [entry.schema, entry.tableName, field]
     );
     if (colCheck.rows.length === 0) {
       return res.status(400).json({ error: `Column "${field}" not found in table "${entry.tableName}"` });
     }
 
-    const dataType = colCheck.rows[0].data_type;
+    const dataType = colCheck.rows[0].data_type || '';
     let castValue = value === '' || value === null ? null : value;
-    if (castValue !== null && (dataType.includes('int') || dataType.includes('numeric') || dataType.includes('float') || dataType.includes('double') || dataType.includes('real'))) {
+    if (castValue !== null && (dataType.includes('int') || dataType.includes('numeric') || dataType.includes('float') || dataType.includes('double') || dataType.includes('real') || dataType === 'float4' || dataType === 'float8')) {
       castValue = Number(castValue);
       if (isNaN(castValue)) return res.status(400).json({ error: `"${value}" is not a valid number for column "${field}"` });
     }
