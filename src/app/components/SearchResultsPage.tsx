@@ -79,7 +79,8 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
     setEditingCell(null);
 
     try {
-      const res = await fetch(`http://localhost:3001/api/comptypes/${compId}/rows/${modelId}`, {
+      const apiBase = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:3001/api';
+      const res = await fetch(`${apiBase}/comptypes/${compId}/rows/${modelId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ field: col, value: editValue }),
