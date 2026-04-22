@@ -220,7 +220,7 @@ app.patch('/api/comptypes/:compId/rows/:modelId', async (req, res) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 buildCompIdMapping().then(() => {
   app.listen(PORT, () => {
