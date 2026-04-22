@@ -6,13 +6,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Connect to the local Postgres database
-const pool = new Pool({
-  host: 'localhost',
-  port: 5432,
-  database: 'Sub-System_DB',
-  user: process.env.DB_USER || require('os').userInfo().username,
-});
+// Connect to Railway (production) or local Postgres (development)
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }
+    : {
+        host: 'localhost',
+        port: 5432,
+        database: 'Sub-System_DB',
+        user: process.env.DB_USER || require('os').userInfo().username,
+      }
+);
 
 // Build a map of comp_id → table_name at startup
 let compIdToTable = {};
