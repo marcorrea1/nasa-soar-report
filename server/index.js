@@ -18,33 +18,37 @@ const pool = new Pool(
       }
 );
 
-// Build a map of comp_id → table_name at startup
+// Build a map of comp_id → { tableName, schema, qualifiedName } at startup
 let compIdToTable = {};
 
 async function buildCompIdMapping() {
   const client = await pool.connect();
   try {
-    // Get all tables that have a comp_id column
+    // Find all tables with comp_id across all non-system schemas
     const tablesRes = await client.query(`
-      SELECT table_name
+      SELECT DISTINCT table_schema, table_name
       FROM information_schema.columns
       WHERE column_name = 'comp_id'
-        AND table_schema = 'public'
+        AND table_schema NOT IN ('information_schema', 'pg_catalog')
         AND table_name != 'comptype'
       ORDER BY table_name
     `);
 
+    const schemas = [...new Set(tablesRes.rows.map(r => r.table_schema))];
+    console.log('Schemas found:', schemas);
+
     for (const row of tablesRes.rows) {
-      const tableName = row.table_name;
+      const { table_schema, table_name } = row;
+      const qualifiedName = `"${table_schema}"."${table_name}"`;
       try {
         const res = await client.query(
-          `SELECT DISTINCT comp_id FROM "${tableName}" WHERE comp_id IS NOT NULL`
+          `SELECT DISTINCT comp_id FROM ${qualifiedName} WHERE comp_id IS NOT NULL`
         );
         for (const r of res.rows) {
-          compIdToTable[r.comp_id] = tableName;
+          compIdToTable[r.comp_id] = { tableName: table_name, schema: table_schema, qualifiedName };
         }
       } catch (e) {
-        // skip tables that fail
+        console.log(`Skipping ${qualifiedName}:`, e.message);
       }
     }
     console.log(`Mapped ${Object.keys(compIdToTable).length} component types to tables`);
@@ -56,15 +60,23 @@ async function buildCompIdMapping() {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // GET /api/subsystems
-// Returns all subsystems (chapters) with their component types (subsections)
 app.get('/api/subsystems', async (req, res) => {
   try {
-    const subsystems = await pool.query(
-      'SELECT ss_id, ss_name, ss_code FROM subsystem ORDER BY ss_id'
-    );
-    const comptypes = await pool.query(
-      'SELECT comp_id, ss_id, comptype_name, comptype_code FROM comptype ORDER BY comp_id'
-    );
+    // Try public schema first, then fall back to any schema with subsystem table
+    let subsystems, comptypes;
+    try {
+      subsystems = await pool.query('SELECT ss_id, ss_name, ss_code FROM subsystem ORDER BY ss_id');
+      comptypes = await pool.query('SELECT comp_id, ss_id, comptype_name, comptype_code FROM comptype ORDER BY comp_id');
+    } catch (e) {
+      // Try with schema prefix
+      const schemaRes = await pool.query(`
+        SELECT DISTINCT table_schema FROM information_schema.tables
+        WHERE table_name = 'subsystem' AND table_schema NOT IN ('information_schema', 'pg_catalog')
+      `);
+      const schema = schemaRes.rows[0]?.table_schema || 'public';
+      subsystems = await pool.query(`SELECT ss_id, ss_name, ss_code FROM "${schema}".subsystem ORDER BY ss_id`);
+      comptypes = await pool.query(`SELECT comp_id, ss_id, comptype_name, comptype_code FROM "${schema}".comptype ORDER BY comp_id`);
+    }
 
     const result = subsystems.rows.map(ss => ({
       ...ss,
@@ -84,19 +96,18 @@ app.get('/api/subsystems', async (req, res) => {
 });
 
 // GET /api/comptypes/:compId/data
-// Returns all rows from the table for a given component type
 app.get('/api/comptypes/:compId/data', async (req, res) => {
   const compId = parseInt(req.params.compId);
-  const tableName = compIdToTable[compId];
+  const entry = compIdToTable[compId];
 
-  if (!tableName) {
+  if (!entry) {
     return res.status(404).json({ error: 'No data table found for this component type' });
   }
 
   try {
-    const result = await pool.query(`SELECT * FROM "${tableName}" ORDER BY 1`);
+    const result = await pool.query(`SELECT * FROM ${entry.qualifiedName} ORDER BY 1`);
     res.json({
-      tableName,
+      tableName: entry.tableName,
       columns: result.fields.map(f => f.name),
       rows: result.rows,
     });
@@ -107,7 +118,6 @@ app.get('/api/comptypes/:compId/data', async (req, res) => {
 });
 
 // GET /api/search?q=term
-// Searches organization + model columns across all product tables
 app.get('/api/search', async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json([]);
@@ -115,51 +125,37 @@ app.get('/api/search', async (req, res) => {
   const searchTerm = `%${q.toLowerCase()}%`;
   const results = [];
 
-  // Tables that have both organization and model-like text columns
-  const searchableTables = Object.values(compIdToTable);
-  const uniqueTables = [...new Set(searchableTables)];
+  const uniqueEntries = Object.entries(compIdToTable).reduce((acc, [compId, entry]) => {
+    if (!acc.find(e => e.qualifiedName === entry.qualifiedName)) {
+      acc.push({ compId: parseInt(compId), ...entry });
+    }
+    return acc;
+  }, []);
 
   const client = await pool.connect();
   try {
-    // Get text columns for each table
-    const colsRes = await client.query(`
-      SELECT table_name, column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND data_type IN ('text', 'character varying')
-        AND table_name = ANY($1)
-      ORDER BY table_name, ordinal_position
-    `, [uniqueTables]);
+    for (const entry of uniqueEntries) {
+      // Get text columns for this table
+      const colsRes = await client.query(`
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = $1
+          AND table_name = $2
+          AND data_type IN ('text', 'character varying')
+        ORDER BY ordinal_position
+      `, [entry.schema, entry.tableName]);
 
-    // Group columns by table
-    const tableColumns = {};
-    for (const row of colsRes.rows) {
-      if (!tableColumns[row.table_name]) tableColumns[row.table_name] = [];
-      tableColumns[row.table_name].push(row.column_name);
-    }
-
-    // Search each table
-    for (const [tableName, cols] of Object.entries(tableColumns)) {
+      const cols = colsRes.rows.map(r => r.column_name);
       if (cols.length === 0) continue;
 
       const conditions = cols.map(col => `LOWER("${col}") LIKE $1`).join(' OR ');
       try {
         const rows = await client.query(
-          `SELECT * FROM "${tableName}" WHERE ${conditions} LIMIT 20`,
+          `SELECT * FROM ${entry.qualifiedName} WHERE ${conditions} LIMIT 20`,
           [searchTerm]
         );
-
-        // Find the comp_id for this table
-        const compId = Object.keys(compIdToTable).find(
-          id => compIdToTable[id] === tableName
-        );
-
         for (const row of rows.rows) {
-          results.push({
-            tableName,
-            compId: compId ? parseInt(compId) : null,
-            row,
-          });
+          results.push({ tableName: entry.tableName, compId: entry.compId, row });
         }
       } catch (e) {
         // skip
@@ -173,7 +169,6 @@ app.get('/api/search', async (req, res) => {
 });
 
 // PATCH /api/comptypes/:compId/rows/:modelId
-// Admin: update a single cell in the DB
 app.patch('/api/comptypes/:compId/rows/:modelId', async (req, res) => {
   try {
     const compId = parseInt(req.params.compId);
@@ -184,20 +179,19 @@ app.patch('/api/comptypes/:compId/rows/:modelId', async (req, res) => {
     if (isNaN(compId)) return res.status(400).json({ error: 'Invalid compId' });
     if (isNaN(modelId)) return res.status(400).json({ error: 'Invalid modelId' });
 
-    const tableName = compIdToTable[compId];
-    if (!tableName) return res.status(404).json({ error: `Unknown compId: ${compId}` });
+    const entry = compIdToTable[compId];
+    if (!entry) return res.status(404).json({ error: `Unknown compId: ${compId}` });
 
     // Validate field exists in this table (prevents SQL injection)
     const colCheck = await pool.query(
       `SELECT column_name, data_type FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
-      [tableName, field]
+       WHERE table_schema = $1 AND table_name = $2 AND column_name = $3`,
+      [entry.schema, entry.tableName, field]
     );
     if (colCheck.rows.length === 0) {
-      return res.status(400).json({ error: `Column "${field}" not found in table "${tableName}"` });
+      return res.status(400).json({ error: `Column "${field}" not found in table "${entry.tableName}"` });
     }
 
-    // Cast value to the correct type so Postgres doesn't reject it
     const dataType = colCheck.rows[0].data_type;
     let castValue = value === '' || value === null ? null : value;
     if (castValue !== null && (dataType.includes('int') || dataType.includes('numeric') || dataType.includes('float') || dataType.includes('double') || dataType.includes('real'))) {
@@ -206,12 +200,12 @@ app.patch('/api/comptypes/:compId/rows/:modelId', async (req, res) => {
     }
 
     const result = await pool.query(
-      `UPDATE "${tableName}" SET "${field}" = $1 WHERE model_id = $2 RETURNING *`,
+      `UPDATE ${entry.qualifiedName} SET "${field}" = $1 WHERE model_id = $2 RETURNING *`,
       [castValue, modelId]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: `No row found with model_id = ${modelId}` });
 
-    console.log(`Admin update: ${tableName}.${field} = ${castValue} (model_id=${modelId})`);
+    console.log(`Admin update: ${entry.qualifiedName}.${field} = ${castValue} (model_id=${modelId})`);
     res.json({ success: true, row: result.rows[0] });
   } catch (err) {
     console.error('Admin PATCH error:', err.message);
@@ -228,5 +222,6 @@ buildCompIdMapping().then(() => {
   });
 }).catch(err => {
   console.error('Failed to build comp_id mapping:', err.message);
+  console.error('DATABASE_URL set?', !!process.env.DATABASE_URL);
   process.exit(1);
 });
