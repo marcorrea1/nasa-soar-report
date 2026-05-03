@@ -92,16 +92,18 @@ export function TopNav({ onSearch, searchQuery, onOpenExport }: TopNavProps) {
             </div>
           )}
 
-          {/* User Profile */}
-          <button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0">
-            <div className="size-8 bg-gray-200 rounded-full flex items-center justify-center">
-              <User className="size-4 text-gray-600" />
-            </div>
-            <div className="text-left hidden lg:block">
-              <div className="text-sm font-medium text-gray-900">J. Smith</div>
-              <div className="text-xs text-gray-500">Engineer</div>
-            </div>
-          </button>
+          {/* User Profile — only shown in admin mode */}
+          {isAdmin && (
+            <button className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors flex-shrink-0">
+              <div className="size-8 bg-gray-200 rounded-full flex items-center justify-center">
+                <User className="size-4 text-gray-600" />
+              </div>
+              <div className="text-left hidden lg:block">
+                <div className="text-sm font-medium text-gray-900">J. Smith</div>
+                <div className="text-xs text-gray-500">Engineer</div>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 

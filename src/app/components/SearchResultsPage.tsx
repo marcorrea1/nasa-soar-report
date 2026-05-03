@@ -8,7 +8,7 @@ import { DownloadCartTray } from './DownloadCartTray';
 import { DownloadProgressModal } from './DownloadProgressModal';
 import { TechnologyDetailModal } from './TechnologyDetailModal';
 import { useSubsystems, useComptypeData, useSearch } from '../hooks/useReportData';
-import { Filter, ShoppingCart, Loader2, Table2, FileText, FileSpreadsheet, Pin, PinOff, Pencil, Check, X } from 'lucide-react';
+import { Filter, ShoppingCart, Loader2, Table2, FileText, FileSpreadsheet, Pin, PinOff, Pencil, Check, X, Columns3 } from 'lucide-react';
 import { useAdmin } from '../contexts/AdminContext';
 import { ExportBuilderPanel } from './ExportBuilderPanel';
 import {
@@ -24,7 +24,7 @@ function prettyCol(col: string) {
   return col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-// Raw DB data table — sticky columns + admin inline editing
+// Raw DB data table — sticky columns + admin inline editing + row selection
 function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; compId: number | null }) {
   const { columns, rows: initialRows, compId } = props;
   const { isAdmin } = useAdmin();
@@ -333,6 +333,26 @@ export function SearchResultsPage() {
   const [downloadCart, setDownloadCart] = useState<Array<{ id: string; chapterNumber: number; title: string }>>([]);
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [exportingChapter, setExportingChapter] = useState(false);
+  const [colPickerOpen, setColPickerOpen] = useState(false);
+  const [selectedCols, setSelectedCols] = useState<Set<string>>(new Set());
+  const colPickerRef = useRef<HTMLDivElement>(null);
+
+  // When table data loads, default all columns selected
+  useEffect(() => {
+    if (tableData) {
+      const displayCols = tableData.columns.filter(c => c !== 'model_id' && c !== 'comp_id');
+      setSelectedCols(new Set(displayCols));
+    }
+  }, [tableData?.tableName]);
+
+  // Close picker on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) setColPickerOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   async function handleExportChapter(format: 'csv' | 'pdf') {
     if (!activeSubsystem) return;
@@ -633,24 +653,72 @@ export function SearchResultsPage() {
                 <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
                   <h1 className="text-2xl font-semibold text-gray-900">{activeComptype?.comptype_name}</h1>
                   {/* Sub-category export buttons — only when data is loaded */}
-                  {tableData && !tableLoading && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => exportTableAsCSV(tableData)}
-                        className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-                      >
-                        <FileSpreadsheet className="size-4 text-green-600" />
-                        Export CSV
-                      </button>
-                      <button
-                        onClick={() => exportTableAsPDF(tableData, activeSubsystem?.ss_name)}
-                        className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
-                      >
-                        <FileText className="size-4 text-red-500" />
-                        Export PDF
-                      </button>
-                    </div>
-                  )}
+                  {tableData && !tableLoading && (() => {
+                    const displayCols = tableData.columns.filter(c => c !== 'model_id' && c !== 'comp_id');
+                    const activeCols = displayCols.filter(c => selectedCols.has(c));
+                    const exportData = {
+                      ...tableData,
+                      columns: ['model_id', 'comp_id', ...activeCols],
+                      rows: tableData.rows,
+                    };
+                    const allSelected = activeCols.length === displayCols.length;
+                    return (
+                      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                        {/* Column picker */}
+                        <div className="relative" ref={colPickerRef}>
+                          <button
+                            onClick={() => setColPickerOpen(o => !o)}
+                            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg transition-colors text-sm font-medium ${!allSelected ? 'border-blue-400 text-blue-700 bg-blue-50' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                          >
+                            <Columns3 className="size-4" />
+                            Columns{!allSelected ? ` (${activeCols.length}/${displayCols.length})` : ''}
+                          </button>
+                          {colPickerOpen && (
+                            <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[220px] max-h-72 overflow-y-auto">
+                              <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-100">
+                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Select columns</span>
+                                <button
+                                  onClick={() => setSelectedCols(allSelected ? new Set() : new Set(displayCols))}
+                                  className="text-xs text-blue-600 hover:underline"
+                                >
+                                  {allSelected ? 'Deselect all' : 'Select all'}
+                                </button>
+                              </div>
+                              {displayCols.map(col => (
+                                <label key={col} className="flex items-center gap-2 py-1 px-1 hover:bg-gray-50 rounded cursor-pointer text-sm text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedCols.has(col)}
+                                    onChange={() => setSelectedCols(prev => {
+                                      const next = new Set(prev);
+                                      next.has(col) ? next.delete(col) : next.add(col);
+                                      return next;
+                                    })}
+                                    className="w-4 h-4 rounded accent-blue-600"
+                                  />
+                                  {prettyCol(col)}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => exportTableAsCSV(exportData)}
+                          className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                        >
+                          <FileSpreadsheet className="size-4 text-green-600" />
+                          Export CSV
+                        </button>
+                        <button
+                          onClick={() => exportTableAsPDF(exportData, activeSubsystem?.ss_name)}
+                          className="flex items-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+                        >
+                          <FileText className="size-4 text-red-500" />
+                          Export PDF
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {tableLoading ? (
