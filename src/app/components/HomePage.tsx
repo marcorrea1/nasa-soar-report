@@ -6,7 +6,6 @@ import { AdminLoginModal } from './AdminLoginModal';
 import { useNavigate, useLocation } from 'react-router';
 import { SearchBar } from './SearchBar';
 import { TOCSidebar } from './TOCSidebar';
-import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Menu, X } from 'lucide-react';
 
 export function HomePage() {
@@ -94,7 +93,7 @@ export function HomePage() {
         {/* NASA Logo and Branding — click 5× quickly for admin login */}
         <div className="mb-12 text-center">
           <div className="flex items-center justify-center mb-6">
-            <ImageWithFallback
+            <img
               src={image_fed5debd253418cf91075867ff11a12bc904dc7a}
               alt="NASA Meatball Logo"
               className="h-32 w-32 object-contain cursor-pointer select-none"

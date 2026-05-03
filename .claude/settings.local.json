@@ -34,7 +34,9 @@
       "Bash(ls \"/Users/marcocorreagalvan/Downloads/Nasa Mock \\(1\\)/node_modules/.bin/\")",
       "Bash(ls \"/Users/marcocorreagalvan/Downloads/Nasa Mock \\(1\\)/node_modules/typescript/bin/\")",
       "Bash(ls \"/Users/marcocorreagalvan/Downloads/Nasa Mock \\(1\\)/node_modules/\")",
-      "Bash(/usr/local/bin/node node_modules/.bin/vite build)"
+      "Bash(/usr/local/bin/node node_modules/.bin/vite build)",
+      "Bash(node index.js)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ]
   }
 }
