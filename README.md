@@ -14,17 +14,15 @@ The NASA Small Spacecraft State-of-the-Art Report covers 10+ technology chapters
 ## Architecture Overview
 
 ```
-├── src/                        ← React frontend (deployed to Vercel)
+├── src/                        ← React frontend
 │   ├── app/
 │   │   ├── components/         ← All UI pages and components
 │   │   ├── hooks/              ← API data fetching hooks
 │   │   ├── contexts/           ← Global state (admin auth)
 │   │   └── utils/              ← Export logic (CSV, PDF, Excel)
 │
-├── server/                     ← Node.js + Express backend (deployed to Railway)
-│   └── index.js                ← All API routes + PostgreSQL connection
-│
-└── railway.toml                ← Tells Railway how to build & start the backend
+└── server/                     ← Node.js + Express backend
+    └── index.js                ← All API routes + PostgreSQL connection
 ```
 
 ---
@@ -33,7 +31,7 @@ The NASA Small Spacecraft State-of-the-Art Report covers 10+ technology chapters
 
 ### Backend — `server/index.js`
 The entire backend lives in one file. It:
-- Connects to PostgreSQL (local or Railway via `DATABASE_URL`)
+- Connects to PostgreSQL (local Postgres database)
 - On startup, scans all tables with a `comp_id` column and builds a lookup map
 - Serves 4 API endpoints:
   - `GET /api/subsystems` — all chapters and sub-categories
@@ -53,7 +51,7 @@ Admin access is hidden from regular users. Two ways to activate it:
 1. Click the NASA logo 5 times quickly on any page
 2. Navigate to `/?admin` in the URL bar
 
-Both open a password modal. Password is set in `AdminContext.tsx`. Once logged in, every table cell becomes clickable and editable — changes are sent via `PATCH` to the backend and saved to the database instantly.
+Both open a password modal. Password is controlled by the `VITE_ADMIN_PASSWORD` environment variable. Once logged in, every table cell becomes clickable and editable — changes are sent via `PATCH` to the backend and saved to the database instantly.
 
 ### Exports — `src/app/utils/exportUtils.ts`
 Handles all three export formats:
@@ -62,7 +60,7 @@ Handles all three export formats:
 - Excel (.xlsx) — one sheet per chapter, all tables combined, using SheetJS
 
 ### API Connection — `src/app/hooks/useReportData.ts`
-All frontend API calls live here. Uses `VITE_API_URL` environment variable to switch between local (`localhost:3001`) and production (Railway) automatically.
+All frontend API calls live here. Defaults to `localhost:3001`. Set `VITE_API_URL` to point to a different backend if needed.
 
 ---
 
@@ -70,7 +68,13 @@ All frontend API calls live here. Uses `VITE_API_URL` environment variable to sw
 
 **Requirements:** Node.js, PostgreSQL (Postgres.app on Mac), the `Sub-System_DB` database loaded
 
-**Step 1 — Start the backend:**
+**Step 1 — Copy the example env file and set your admin password:**
+```bash
+cp .env.example .env.local
+# Then open .env.local and set VITE_ADMIN_PASSWORD
+```
+
+**Step 2 — Start the backend:**
 ```bash
 cd server
 node index.js
@@ -78,7 +82,7 @@ node index.js
 # Mapped 89 component types to tables
 ```
 
-**Step 2 — Start the frontend:**
+**Step 3 — Start the frontend:**
 ```bash
 npm run dev
 # http://localhost:5173
@@ -86,27 +90,7 @@ npm run dev
 
 **Two links for demos:**
 - Public view: `http://localhost:5173/`
-- Admin view: `http://localhost:5173/?admin` *(password in AdminContext.tsx)*
-
----
-
-## Deployment
-
-| Service | Purpose | Config |
-|---------|---------|--------|
-| Vercel | Hosts the React frontend | Set `VITE_API_URL` env var to Railway backend URL |
-| Railway | Hosts the Node.js backend + PostgreSQL | Set `DATABASE_URL` env var; `railway.toml` defines build/start commands |
-
-The frontend automatically uses the Railway backend in production via `.env.production`.
-
----
-
-## Environment Variables
-
-| Variable | Where | Value |
-|----------|-------|-------|
-| `VITE_API_URL` | Vercel (frontend) | `https://nasa-soar-report-production.up.railway.app` |
-| `DATABASE_URL` | Railway (backend) | PostgreSQL connection string from Railway Postgres service |
+- Admin view: `http://localhost:5173/?admin`
 
 ---
 
@@ -120,4 +104,3 @@ The frontend automatically uses the Railway backend in production via `.env.prod
 | Database | PostgreSQL |
 | PDF Export | jsPDF + jsPDF-AutoTable |
 | Excel Export | SheetJS (xlsx) |
-| Hosting | Vercel (frontend) + Railway (backend + DB) |
