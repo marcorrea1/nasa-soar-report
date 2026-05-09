@@ -51,7 +51,7 @@ Admin access is hidden from regular users. Two ways to activate it:
 1. Click the NASA logo 5 times quickly on any page
 2. Navigate to `/?admin` in the URL bar
 
-Both open a password modal. Password is controlled by the `VITE_ADMIN_PASSWORD` environment variable. Once logged in, every table cell becomes clickable and editable — changes are sent via `PATCH` to the backend and saved to the database instantly.
+Both open a password modal. The default password is `nasa2024`. It is controlled by the `VITE_ADMIN_PASSWORD` environment variable in your `.env.local` file. Once logged in, every table cell becomes clickable and editable — changes are sent via `PATCH` to the backend and saved to the database instantly.
 
 ### Exports — `src/app/utils/exportUtils.ts`
 Handles all three export formats:
