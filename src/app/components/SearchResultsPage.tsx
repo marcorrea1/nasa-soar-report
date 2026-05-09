@@ -229,11 +229,11 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
           </button>
         </div>
       )}
-      <div className="overflow-x-auto">
+      <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 300px)' }}>
       <table className="min-w-full text-sm border-collapse">
         <thead>
           <tr className="bg-[#0B3D91] text-white">
-            <th className="w-6 px-1 bg-[#0B3D91] sticky z-20" />
+            <th className="w-6 px-1 bg-[#0B3D91] sticky top-0 left-0 z-40" />
             {orderedIndices.map((origIdx, renderPos) => {
               const col = displayCols[origIdx];
               const isLocked = lockedSet.has(origIdx);
@@ -244,10 +244,10 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
                   key={col}
                   ref={isLocked ? (el => { lockedThRefs.current[lockedSlot] = el; }) : undefined}
                   className={
-                    'px-4 py-2.5 text-left font-medium whitespace-nowrap text-xs group relative' +
+                    'px-4 py-2.5 text-left font-medium whitespace-nowrap text-xs group relative sticky top-0 bg-[#0B3D91]' +
                     (isLocked
-                      ? ' sticky z-20 bg-[#0B3D91]' + (isLastLocked ? ' shadow-[2px_0_8px_rgba(0,0,0,0.3)]' : '')
-                      : '')
+                      ? ' z-30' + (isLastLocked ? ' shadow-[2px_0_8px_rgba(0,0,0,0.3)]' : '')
+                      : ' z-20')
                   }
                   style={isLocked ? { left: stickyLeft(lockedSlot) } : undefined}
                 >
@@ -287,8 +287,10 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
                 ].join(' ')}
                 style={isRowLocked ? { top: stickyTop(lockedRowSlot) } : undefined}
               >
-                {/* Row lock toggle — appears on hover */}
-                <td className={`w-6 px-1 border-b border-gray-100 ${rowBg}`}>
+                {/* Row lock toggle — stays at left edge even when row is sticky */}
+                <td
+                  className={`w-6 px-1 border-b border-gray-100 ${rowBg} ${isRowLocked ? 'sticky left-0 z-20' : ''}`}
+                >
                   <button
                     onClick={() => toggleRowLock(i)}
                     title={isRowLocked ? 'Unlock row' : 'Lock this row'}
@@ -304,14 +306,16 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
                 </td>
                 {orderedIndices.map((origIdx) => {
                   const col = displayCols[origIdx];
-                  const isLocked = lockedSet.has(origIdx);
+                  const isColLocked = lockedSet.has(origIdx);
                   const lockedSlot = lockedIndices.indexOf(origIdx);
-                  const isLastLocked = isLocked && lockedSlot === lockedCount - 1;
+                  const isLastLocked = isColLocked && lockedSlot === lockedCount - 1;
                   const cellKey = `${i}:${col}`;
                   const isEditing = editingCell?.rowIdx === i && editingCell?.col === col;
                   const isSaving = savingCell?.rowIdx === i && savingCell?.col === col;
                   const isSaved = savedCells.has(cellKey);
                   const hasError = errorCells.has(cellKey);
+                  // When both row and column are locked, bump z-index so the corner cell wins
+                  const cellZ = isRowLocked && isColLocked ? 'z-20' : isColLocked ? 'z-10' : '';
 
                   return (
                     <td
@@ -319,15 +323,15 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
                       onClick={() => !isEditing && startEdit(i, col)}
                       className={[
                         'border-b border-gray-100 whitespace-nowrap transition-colors',
-                        isLocked
-                          ? `sticky z-10 font-medium ${rowBg}` + (isLastLocked ? ' shadow-[2px_0_8px_rgba(0,0,0,0.12)]' : '')
+                        isColLocked
+                          ? `sticky font-medium ${rowBg} ${cellZ}` + (isLastLocked ? ' shadow-[2px_0_8px_rgba(0,0,0,0.12)]' : '')
                           : '',
                         isAdmin && compId ? 'cursor-pointer hover:bg-blue-50 group/cell' : 'px-4 py-2 text-gray-800',
                         isSaved ? '!bg-green-50' : '',
                         hasError ? '!bg-red-50' : '',
                         isSaving ? 'opacity-60' : '',
                       ].join(' ')}
-                      style={isLocked ? { left: stickyLeft(lockedSlot) } : undefined}
+                      style={isColLocked ? { left: stickyLeft(lockedSlot) } : undefined}
                     >
                       {isEditing ? (
                         <div className="flex items-center gap-1 px-1 py-0.5">
@@ -356,7 +360,7 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
                             <span title={errorCells.get(cellKey)} className="size-3 text-red-500 flex-shrink-0">!</span>
                           ) : null}
                           <span className={`text-gray-800 ${isSaved ? 'text-green-700' : ''} ${hasError ? 'text-red-700' : ''}`}>
-                            {row[col] != null ? String(row[col]) : '—'}
+                            {rows[i][col] != null ? String(rows[i][col]) : '—'}
                           </span>
                           {isAdmin && compId && !isSaving && !isEditing && (
                             <Pencil className="size-3 text-blue-300 opacity-0 group-hover/cell:opacity-100 transition-opacity flex-shrink-0 ml-auto" />
