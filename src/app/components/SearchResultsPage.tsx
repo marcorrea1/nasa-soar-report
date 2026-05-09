@@ -159,6 +159,40 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
   const lockedCount = lockedSet.size;
   const lockedNames = lockedIndices.map(i => prettyCol(displayCols[i]));
 
+  // Locked rows
+  const [lockedRowSet, setLockedRowSet] = useState<Set<number>>(new Set());
+  useEffect(() => { setLockedRowSet(new Set()); }, [columns.join(',')]);
+
+  const [lockedRowHeights, setLockedRowHeights] = useState<number[]>([]);
+  const lockedRowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
+  const lockedRowIndices = [...lockedRowSet].sort((a, b) => a - b);
+
+  useEffect(() => {
+    const heights = lockedRowRefs.current.slice(0, lockedRowIndices.length).map(el => el?.offsetHeight ?? 0);
+    setLockedRowHeights(prev =>
+      prev.length === heights.length && prev.every((h, i) => h === heights[i]) ? prev : heights
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedRowSet]);
+
+  // Header is ~40px; each locked row stacks below it
+  function stickyTop(lockedRowSlot: number) {
+    let top = 41; // approximate thead height
+    for (let s = 0; s < lockedRowSlot; s++) top += lockedRowHeights[s] ?? 37;
+    return top;
+  }
+
+  function toggleRowLock(rowIdx: number) {
+    setLockedRowSet(prev => {
+      const next = new Set(prev);
+      next.has(rowIdx) ? next.delete(rowIdx) : next.add(rowIdx);
+      return next;
+    });
+  }
+
+  const unlockedRowIndices = rows.map((_, i) => i).filter(i => !lockedRowSet.has(i));
+  const orderedRowIndices = [...lockedRowIndices, ...unlockedRowIndices];
+
   if (rows.length === 0) return <p className="text-sm text-gray-500 italic">No data available.</p>;
   return (
     <div className="space-y-2">
@@ -175,16 +209,21 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
         </div>
       )}
     <div className="rounded-lg border border-gray-200">
-      {lockedCount > 0 && (
+      {(lockedCount > 0 || lockedRowSet.size > 0) && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-blue-50 border-b border-blue-100 text-xs text-blue-700 rounded-t-lg">
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1.5 flex-wrap">
             <Pin className="size-3 flex-shrink-0" />
-            <strong>{lockedCount} column{lockedCount > 1 ? 's' : ''} locked:</strong>
-            <span className="text-blue-600">{lockedNames.join(', ')}</span>
+            {lockedCount > 0 && (
+              <span><strong>{lockedCount} column{lockedCount > 1 ? 's' : ''} locked:</strong> <span className="text-blue-600">{lockedNames.join(', ')}</span></span>
+            )}
+            {lockedCount > 0 && lockedRowSet.size > 0 && <span className="text-blue-300">·</span>}
+            {lockedRowSet.size > 0 && (
+              <span><strong>{lockedRowSet.size} row{lockedRowSet.size > 1 ? 's' : ''} locked</strong></span>
+            )}
           </span>
           <button
-            onClick={() => setLockedSet(new Set())}
-            className="ml-4 flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors"
+            onClick={() => { setLockedSet(new Set()); setLockedRowSet(new Set()); }}
+            className="ml-4 flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors flex-shrink-0"
           >
             <PinOff className="size-3" /> Unlock all
           </button>
@@ -194,6 +233,7 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
       <table className="min-w-full text-sm border-collapse">
         <thead>
           <tr className="bg-[#0B3D91] text-white">
+            <th className="w-6 px-1 bg-[#0B3D91] sticky z-20" />
             {orderedIndices.map((origIdx, renderPos) => {
               const col = displayCols[origIdx];
               const isLocked = lockedSet.has(origIdx);
@@ -232,10 +272,36 @@ function DataTable(props: { columns: string[]; rows: Record<string, unknown>[]; 
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => {
-            const rowBg = i % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+          {orderedRowIndices.map((i) => {
+            const isRowLocked = lockedRowSet.has(i);
+            const lockedRowSlot = lockedRowIndices.indexOf(i);
+            const rowBg = isRowLocked ? 'bg-blue-50' : (i % 2 === 0 ? 'bg-white' : 'bg-gray-50');
             return (
-              <tr key={i} className={rowBg}>
+              <tr
+                key={i}
+                ref={isRowLocked ? (el => { lockedRowRefs.current[lockedRowSlot] = el; }) : undefined}
+                className={[
+                  rowBg,
+                  'group/row',
+                  isRowLocked ? 'sticky z-10 shadow-[0_2px_8px_rgba(0,0,0,0.1)]' : '',
+                ].join(' ')}
+                style={isRowLocked ? { top: stickyTop(lockedRowSlot) } : undefined}
+              >
+                {/* Row lock toggle — appears on hover */}
+                <td className={`w-6 px-1 border-b border-gray-100 ${rowBg}`}>
+                  <button
+                    onClick={() => toggleRowLock(i)}
+                    title={isRowLocked ? 'Unlock row' : 'Lock this row'}
+                    className={[
+                      'transition-all rounded p-0.5',
+                      isRowLocked
+                        ? 'opacity-100 text-blue-500 hover:text-blue-700'
+                        : 'opacity-0 group-hover/row:opacity-100 text-gray-300 hover:text-blue-400',
+                    ].join(' ')}
+                  >
+                    {isRowLocked ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+                  </button>
+                </td>
                 {orderedIndices.map((origIdx) => {
                   const col = displayCols[origIdx];
                   const isLocked = lockedSet.has(origIdx);
