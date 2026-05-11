@@ -13,7 +13,7 @@ const AdminContext = createContext<AdminContextType>({
 });
 
 // Set VITE_ADMIN_PASSWORD in your .env file — never hardcode this
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'changeme';
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'nasa2024';
 
 export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(

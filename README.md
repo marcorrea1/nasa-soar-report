@@ -51,7 +51,7 @@ Admin access is hidden from regular users. Two ways to activate it:
 1. Click the NASA logo 5 times quickly on any page
 2. Navigate to `/?admin` in the URL bar
 
-Both open a password modal. The default password is `nasa2024`. It is controlled by the `VITE_ADMIN_PASSWORD` environment variable in your `.env.local` file. Once logged in, every table cell becomes clickable and editable — changes are sent via `PATCH` to the backend and saved to the database instantly.
+Both open a password modal. The default password is `nasa2024` (defined as a fallback in `AdminContext.tsx`). Override it by setting `VITE_ADMIN_PASSWORD` in `.env.local`. Once logged in, every table cell becomes clickable and editable — changes are sent via `PATCH` to the backend and saved to the database instantly.
 
 ### Exports — `src/app/utils/exportUtils.ts`
 Handles all three export formats:
@@ -66,31 +66,16 @@ All frontend API calls live here. Defaults to `localhost:3001`. Set `VITE_API_UR
 
 ## Running Locally
 
-**Requirements:** Node.js, PostgreSQL (Postgres.app on Mac), the `Sub-System_DB` database loaded
+See **[QUICKSTART.md](./QUICKSTART.md)** for the fastest path. Short version:
 
-**Step 1 — Copy the example env file and set your admin password:**
 ```bash
-cp .env.example .env.local
-# Then open .env.local and set VITE_ADMIN_PASSWORD
-```
-
-**Step 2 — Start the backend:**
-```bash
-cd server
-node index.js
-# NASA Report API running at http://localhost:3001
-# Mapped 89 component types to tables
-```
-
-**Step 3 — Start the frontend:**
-```bash
-npm run dev
-# http://localhost:5173
+npm run setup    # one-time: installs frontend + backend dependencies
+npm start        # boots backend (port 3001) and frontend (port 5173)
 ```
 
 **Two links for demos:**
 - Public view: `http://localhost:5173/`
-- Admin view: `http://localhost:5173/?admin`
+- Admin view: `http://localhost:5173/?admin` (default password: `nasa2024`)
 
 ---
 
@@ -99,7 +84,7 @@ npm run dev
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
-| UI Components | Radix UI (pre-built accessible components) |
+| Icons | lucide-react |
 | Backend | Node.js, Express |
 | Database | PostgreSQL |
 | PDF Export | jsPDF + jsPDF-AutoTable |
